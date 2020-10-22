@@ -1,0 +1,520 @@
+---
+title: "2020 MMA Datathon - Medical Insurance Fraud Investigation"
+author: "Junduo Dong"
+date: "10/18/2020"
+output:
+  html_document:
+    df_print: paged
+---
+
+<br />
+
+##### This is the R markdown file for 2020 MMA Online Datathon. <br />
+##### Team name: Team Hortons <br />
+##### Team members: Minke Wang, Yuqing Sun, Lily(Lan Xiazi) Liu, Junduo Dong <br />
+##### The Following R-code provide data pre-process, feature engineering and modeling <br />
+
+<br />
+
+```{r setup, include=FALSE}
+if(!is.null(dev.list())) dev.off()
+cat("\014") 
+rm(list=ls())
+
+setwd("~/Downloads/MMA 2020/Datathon 2020 data")
+
+beneficiary <- read.csv("beneficiary.csv", header = TRUE)
+inpatients <- read.csv("inpatients.csv", header = TRUE)
+outpatients <- read.csv("outpatients.csv", header = TRUE)
+providers <- read.csv("providers.csv", header = TRUE)
+```
+
+<br />
+
+### beneficiary table pre-processing
+
+* Calculate each beneficiaty's age 
+* Convert RenalDisease to integer with level 1 and 0
+* Convert Chronic_X to integer with level 2 and 0
+* Create Deadflag indicates whether a beneficairy has passed away
+
+<br />
+
+```{r, results='hide',message=FALSE,warning=FALSE}
+# I.Calculate each beneficiaty's age by subtract DOB with DOD
+library(lubridate)
+
+beneficiary$DOB <- ymd(beneficiary$DOB)
+beneficiary$DOD <- ymd(beneficiary$DOD)
+beneficiary$Age <- as.integer(round((beneficiary$DOD - beneficiary$DOB)/365,0))
+```
+
+```{r}
+# II.As the last DOD is '2009-12-01', which means beneficiary details is of year 2009
+# so we calculate age of other beneficiaries as of year 2009
+beneficiaryDate <- as.Date("2009-12-01","%Y-%m-%d")
+beneficiary$Age <- ifelse(!is.na(beneficiary$Age),beneficiary$Age,
+                          round((beneficiaryDate - beneficiary$DOB)/365,0))
+```
+
+```{r}
+# III.RenalDisease
+beneficiary$RenalDisease <- as.integer(ifelse(beneficiary$RenalDisease == '0', '0','1'))
+```
+
+```{r}
+# IV.Chronic_X
+Chronic <- grep("^Chronic_", names(beneficiary), value = TRUE)
+for (i in 1: length(names(beneficiary[,Chronic]))) {
+  beneficiary[,Chronic] <- ifelse(beneficiary[Chronic[i]] == 2,2,0)
+}
+```
+
+```{r}
+# V.Death Flag
+beneficiary$DeadFlag <- as.integer(ifelse(!is.na(beneficiary$DOD),1,0))
+
+# We can remove DOD and DOB for further analysis since we had use them to compute beneficiary's age and dead-flag
+```
+
+```{r}
+# check beneficiary data
+head(beneficiary)
+```
+
+<br />
+
+### inpatients table pre-processing
+
+* Calculate total claim days for each patients' with their claim
+* Calculate admit days only for inpatients
+* Calculate number of diagnosis, procedures and physicians
+* Calculate number of BID and CID under each distinct PID
+* Calculate distint number of BID and CID under each distinct PID
+* Use raw number minus distinct number to get number of duplicates of BID and CID under each distinct PID
+
+<br />
+
+```{r}
+# I.calculate date period for claim
+inpatients$ClaimDays <- as.integer(ymd(inpatients$EndDt) - ymd(inpatients$StartDt))
+```
+
+```{r}
+# II.calculate how many days each patient has been stayed in the hospital
+inpatients$AdmissionDt <- ymd(inpatients$AdmissionDt)
+inpatients$DischargeDt <- ymd(inpatients$DischargeDt)
+inpatients$Admitdays <- as.integer(inpatients$DischargeDt - inpatients$AdmissionDt + 1)
+```
+
+Count number of Diagnosis and Procedure:
+Since DiagnosisCode_X and ProcedureCode_X are codes, it's hard to fill-in with NA. However, we can count number of Diagnosis and Procedure each inpatient beneficiary has
+
+```{r results='hide',message=FALSE,warning=FALSE}
+# III.Number of Diagnosis
+library(dplyr)
+Diagnosis <- grep("^DiagnosisCode_", names(inpatients), value = TRUE)
+inpatientsNumberOfDiagnosis1or0 <- function(df){
+  df[,Diagnosis] <- lapply(df[,Diagnosis], function(x) as.integer(ifelse(is.na(x),0,1)))
+  return(df)
+}
+inpatients_Diagnosis <- inpatientsNumberOfDiagnosis1or0(inpatients)
+inpatients$NumberOfDiagnosis <- inpatients_Diagnosis %>% select(Diagnosis) %>% rowSums
+inpatients_Diagnosis <- NULL
+```
+
+```{r}
+# IV.Number of Procedures
+Procedure <- grep("^ProcedureCode_", names(inpatients), value = TRUE)
+inpatientsNumberofProcedure1or0 <- function(df){
+  df[,Procedure] <- lapply(df[,Procedure], function(x) as.integer(ifelse(is.na(x),0,1)))
+  return(df)
+}
+inpatients_Procedure <- inpatientsNumberofProcedure1or0(inpatients)
+inpatients$NumberOfProcedures <- inpatients_Procedure %>% select(Procedure) %>% rowSums
+inpatients_Procedure <- NULL
+```
+
+```{r}
+# V.Number of Physicians
+Physicians <- c("AttendingPhysician","OperatingPhysician","OtherPhysician")
+NumberOfPhysicians1or0 <- function(df){
+  df[,Physicians] <- lapply(df[,Physicians], function(x) as.integer(ifelse(is.na(x),0,1)))
+  return(df)
+}
+inpatients_Physicians <- NumberOfPhysicians1or0(inpatients)
+inpatients$NumberOfPhysicians <- inpatients_Physicians %>% select(Physicians) %>% rowSums
+inpatients_Physicians <- NULL
+```
+
+```{r}
+# VI. Number of BID and CID under each PID
+inpatients_PIDBID <- inpatients %>% select(BID,PID) %>% group_by(PID) %>% summarise(NumberOfBID = n())
+inpatients <- merge(inpatients,inpatients_PIDBID,by = "PID")
+inpatients_PIDBID <- NULL
+inpatients_PIDCID <- inpatients %>% select(CID,PID) %>% group_by(PID) %>% summarise(NumberOfCID = n())
+inpatients <- merge(inpatients,inpatients_PIDCID, by = "PID")
+inpatients_PIDCID <- NULL
+```
+
+```{r}
+# VII. Number of distinct BID and CID under each PID and (BID - distinct BID) & (CID - distinct CID)
+inpatients_distinctPIDBID <- inpatients %>% select(BID,PID) %>% group_by(PID) %>% summarise(NumberOfDistinctBID = n_distinct(BID))
+inpatients <- merge(inpatients,inpatients_distinctPIDBID,by = "PID")
+inpatients_distinctPIDBID <- NULL
+inpatients_distinctPIDCID <- inpatients %>% select(CID,PID) %>% group_by(PID) %>% summarise(NumberOfDistinctCID = n_distinct(CID))
+inpatients <- merge(inpatients,inpatients_distinctPIDCID,by = "PID")
+inpatients_distinctPIDCID <- NULL
+
+# Calculate number of duplicates by subtract raw numbers with distinct numbers for BID and CID
+inpatients$`Number of BID - Number of DisitnctBID` <- inpatients$NumberOfBID - inpatients$NumberOfDistinctBID
+inpatients$`Number of CID - Number of DisitnctCID` <- inpatients$NumberOfCID - inpatients$NumberOfDistinctCID
+```
+
+```{r}
+# check inpatient data
+head(inpatients)
+```
+
+<br />
+
+### outpatients table pre-processing
+
+* Calculate total claim days for each patients' with their claim
+* assign value of 0 to admit days only for outpatients
+* Assign value of 0 to DiagnosisGroupCode
+--- same Process below as inpatients
+* Calculate number of diagnosis, procedures and physicians
+* Calculate number of BID and CID under each distinct PID
+* Calculate distint number of BID and CID under each distinct PID
+* Use raw number minus distinct number to get number of duplicates of BID and CID under each distinct PID
+
+<br />
+
+```{r}
+# I.calculate date period for claim
+outpatients$ClaimDays <- as.integer(ymd(outpatients$EndDt) - ymd(outpatients$StartDt))
+
+# II. assign number of 0 to admit days to outpatients
+outpatients$Admitdays <- 0
+```
+
+```{r}
+# III.Number of Diagnosis
+Diagnosis2 <- grep("^DiagnosisCode_", names(outpatients), value = TRUE)
+outpatientsNumberOfDiagnosis1or0 <- function(df){
+  df[,Diagnosis2] <- lapply(df[,Diagnosis2], function(x) as.integer(ifelse(is.na(x),0,1)))
+  return(df)
+}
+outpatients_Diagnosis <- outpatientsNumberOfDiagnosis1or0(outpatients)
+outpatients$NumberOfDiagnosis <- outpatients_Diagnosis %>% select(Diagnosis2) %>% rowSums
+outpatients_Diagnosis <- NULL
+```
+
+```{r}
+# IV.Number of Procedure
+Procedure2 <- grep("^ProcedureCode_", names(outpatients), value = TRUE)
+outpatientsNumberofProcedure1or0 <- function(df){
+  df[,Procedure2] <- lapply(df[,Procedure2], function(x) as.integer(ifelse(is.na(x),0,1)))
+  return(df)
+}
+outpatients_Procedure <- outpatientsNumberofProcedure1or0(outpatients)
+outpatients$NumberOfProcedures <- outpatients_Procedure %>% select(Procedure2) %>% rowSums
+outpatients_Procedure <- NULL
+```
+
+```{r}
+# V.Number of Physicians
+outpatients_Physicians <- NumberOfPhysicians1or0(outpatients)
+outpatients$NumberOfPhysicians <- outpatients_Physicians %>% select(Physicians) %>% rowSums
+outpatients_Physicians <- NULL
+```
+
+```{r}
+# VI. Number of BID and CID under each PID
+outpatients_PIDBID <- outpatients %>% select(BID,PID) %>% group_by(PID) %>% summarise(NumberOfBID = n())
+outpatients <- merge(outpatients, outpatients_PIDBID,by = "PID")
+outpatients_PIDBID <- NULL
+outpatients_PIDCID <- outpatients %>% select(CID,PID) %>% group_by(PID) %>% summarise(NumberOfCID = n())
+outpatients <- merge(outpatients, outpatients_PIDCID,by = "PID")
+outpatients_PIDCID <- NULL
+```
+
+```{r}
+# VII. Number of distinct BID and CID under each PID and (BID - distinct BID) & (CID - distinct CID)
+outpatients_distinctPIDBID <- outpatients %>% select(BID,PID) %>% group_by(PID) %>% summarise(NumberOfDistinctBID = n_distinct(BID))
+outpatients <- merge(outpatients,outpatients_distinctPIDBID,by = "PID")
+outpatients_distinctPIDBID <- NULL
+outpatients_distinctPIDCID <- outpatients %>% select(CID,PID) %>% group_by(PID) %>% summarise(NumberOfDistinctCID = n_distinct(CID))
+outpatients <- merge(outpatients,outpatients_distinctPIDCID,by = "PID")
+outpatients_distinctPIDCID <- NULL
+
+# Calculate number of duplicates by subtract raw numbers with distinct numbers for BID and CID
+outpatients$`Number of BID - Number of DisitnctBID` <- outpatients$NumberOfBID - outpatients$NumberOfDistinctBID
+outpatients$`Number of CID - Number of DisitnctCID` <- outpatients$NumberOfCID - outpatients$NumberOfDistinctCID
+
+```
+
+```{r}
+# VIII. DiagnosisGroupCode
+outpatients$DiagnosisGroupCode = as.factor(NA)
+```
+
+```{r}
+# check outpatient data
+head(outpatients)
+```
+
+<br />
+
+### Check Data Before Merge 
+* Check dimensionality for outpatients and inpatients table
+* Check Surplus between them
+* Main Difference between inpatient and outpatients is the 'Admitdays', outpatients only has value of 0, whereas inpatients has range from 1 to 36 days
+* Drop inpatient's admissionDt and DischargeDt since they been calculated to 'Admitdays'
+* Convert ProcedureCode_X to proper class
+
+<br />
+
+```{r}
+# I. print structures of inpatients and outpatients 
+print(paste("dimensionality of inpatients dataset: " ,dim(inpatients)[1], "observations", dim(inpatients)[2], "features"))
+print(paste("dimensionality of outpatients dataset: " ,dim(outpatients)[1], "observations", dim(outpatients)[2], "features"))
+```
+
+```{r}
+# II.Inpatient dataset (surplus): AdmissionDt, DischargeDt, DiagnosisGroupCode 
+# setdiff(inpatients,outpatients)
+```
+
+```{r}
+# III.Inpatient Admit days range from 1 to 36, outpatient equals 0
+print(paste("Minimum days of admit: ", min(inpatients$Admitdays)));print(paste("Maximum days of admit: ", max(inpatients$Admitdays)))
+
+```
+
+```{r}
+# IV.final conversion and dropout before output
+inpatients$AdmissionDt <- NULL 
+inpatients$DischargeDt <- NULL
+inpatients$ProcedureCode_6 <- as.integer(inpatients$ProcedureCode_6)
+outpatients$ProcedureCode_5 <- as.integer(outpatients$ProcedureCode_5)
+outpatients$ProcedureCode_6 <- as.integer(outpatients$ProcedureCode_6)
+```
+
+```{r}
+# write.csv(inpatients,file="/Users/oliverdong/Downloads/MMA 2020/cleaned data/inpatients.csv")
+# write.csv(outpatients,file="/Users/oliverdong/Downloads/MMA 2020/cleaned data/outpatients.csv")
+# write.csv(beneficiary,file="/Users/oliverdong/Downloads/MMA 2020/cleaned data/beneficiary.csv")
+```
+
+<br />
+
+### Join/Merge Data 
+* Merge inpatients and outpatients table
+* Calculate mean value of 'meanMonths_PartACov' and 'meanMonths_PartBCov' and merge them into fullPatientData
+
+<br />
+
+```{r results='hide',message=FALSE,warning=FALSE}
+# Union inpatient and outpatient data
+setwd("~/Downloads/MMA 2020/cleaned data")
+beneficiary <- read.csv("beneficiary.csv", header = TRUE)
+inpatients <- read.csv("inpatients.csv", header = TRUE)
+outpatients <- read.csv("outpatients.csv", header = TRUE)
+providers <- read.csv("providers.csv", header = TRUE)
+```
+
+```{r}
+inpatients$X <- NULL
+outpatients$X <- NULL
+beneficiary$X <- NULL
+```
+
+```{r results='hide',message=FALSE,warning=FALSE}
+# join full patient data from inpatient, outpatient and provider table
+fullPatientData <- rbind(inpatients, outpatients)
+fullPatientData <- inner_join(fullPatientData, providers, by = 'PID')
+# join beneficiary table with BID
+fullPatientData2 <- inner_join(fullPatientData,beneficiary, by = "BID")
+```
+
+```{r}
+## average coverage for both part A and B under each distinct PID
+meanMonths_PartACov <- fullPatientData2 %>% select(PID, NumOfMonths_PartACov) %>% group_by(PID) %>% summarise(meanMonths_PartACov = mean(NumOfMonths_PartACov))
+meanMonths_PartBCov <- fullPatientData2 %>% select(PID, NumOfMonths_PartBCov) %>% group_by(PID) %>% summarise(meanMonths_PartBCov = mean(NumOfMonths_PartBCov))
+fullPatientData2 <- merge(fullPatientData2, meanMonths_PartACov, by ="PID")
+fullPatientData2 <- merge(fullPatientData2, meanMonths_PartBCov, by ="PID")
+meanMonths_PartACov <- NULL
+meanMonths_PartBCov <- NULL
+```
+
+```{r}
+# check fullPatientData data
+head(fullPatientData)
+```
+
+```{r}
+# save full data
+# write.csv(fullPatientData2,file="/Users/oliverdong/Downloads/MMA 2020/cleaned data/fullPatientData.csv")
+```
+
+<br />
+
+### Feature Engineer and Modeling
+* Convert NA value in DiagnosisGroupCode to 0 and 1 (only inpatients claim has diagnosis group code)
+--- Following are aggregation on differnt metrics to PID level 
+* Patients data: mean value on different continuous variable
+* Beneficary data: mean value on different continuous variable
+* Beneficary data: sum value on ordinal variables: Renaldisease, Chronic_X, deadflag
+
+<br />
+
+```{r results='hide',message=FALSE,warning=FALSE}
+setwd("~/Downloads/MMA 2020/cleaned data")
+fullPatientData <- read.csv("fullPatientData.csv", header = TRUE)
+```
+
+```{r}
+# 1. duplicate fullpatientdata to fullpatientdata2
+fullPatientData2 <- fullPatientData
+fullPatientData2$DiagnosisGroupCode <- ifelse(is.na(fullPatientData2$DiagnosisGroupCode),0,1)
+```
+
+```{r warning=FALSE}
+# 2.convert all numeric features to avergae of PID level in patients data
+library(dplyr)
+data1 <- fullPatientData2 %>% select(PID, Fraud, Number.of.BID...Number.of.DisitnctBID, Number.of.CID...Number.of.DisitnctCID
+                                    ,ClaimDays, Admitdays
+                                    ,NumberOfDiagnosis, NumberOfProcedures, NumberOfPhysicians
+                                    ,AmtReimbursed, DeductibleAmt, DiagnosisGroupCode) %>% group_by(PID,Fraud) %>% 
+  summarise(# AvgNumofBID = mean(NumberOfBID),
+            # AvgNumofCID = mean(NumberOfCID),
+            `AvgNumofCID - AvgNumofDistinctCID` = mean(Number.of.CID...Number.of.DisitnctCID),
+            `AvgNumofBID - AvgNumofDistinctBID` = mean(Number.of.BID...Number.of.DisitnctBID),
+            AvgClaimDays = mean(ClaimDays),
+            AvgAdmitDays = mean(Admitdays),
+            AvgNumofDiagnosis = mean(NumberOfDiagnosis),
+            AvgNumofProcedures = mean(NumberOfProcedures),
+            AvgNumofPhysicians = mean(NumberOfPhysicians),
+            AvgAmtReimbursed = mean(AmtReimbursed),
+            AvgAmtDeductible = mean(DeductibleAmt)
+            # AvgDiagnosisGroupCode = mean(DiagnosisGroupCode)
+            )
+data1 <- as.data.frame(data1)
+```
+
+```{r}
+# 3.convert all numeric features to avergae of PID level in beneficiary data
+data2 <- fullPatientData2 %>% select(PID, Fraud, Age, NumOfMonths_PartACov, NumOfMonths_PartBCov
+                                     ,InpatientAnnualReimbursementAmt
+                                     ,InpatientAnnualDeductibleAmt
+                                     ,OutpatientAnnualReimbursementAmt
+                                     ,OutpatientAnnualDeductibleAmt) %>% group_by(PID,Fraud) %>%
+  summarise(AvgAge = mean(Age),
+            AvgNumOfMonths_PartACov = mean(NumOfMonths_PartACov),
+            AvgNumOfMonths_PartBCov = mean(NumOfMonths_PartBCov),
+            AvgInpatientAnnualReimbursementAmt = mean(InpatientAnnualReimbursementAmt),
+            AvgInpatientAnnualDeductibleAmt = mean(InpatientAnnualDeductibleAmt),
+            AvgOutpatientAnnualReimbursementAmt = mean(OutpatientAnnualReimbursementAmt),
+            AvgOutpatientAnnualDeductibleAmt = mean(OutpatientAnnualDeductibleAmt))
+data2 <- as.data.frame(data2)
+```
+
+```{r}
+# 4. convert all the following features to sum for each distinct PID
+# Renaldisease (46), Chronic_X (51:61), deadflag (67)
+selectcolumns <- c(2,46,51:61,67)
+data3 <- fullPatientData2[,selectcolumns]
+data3 <- data3 %>% mutate_if(is.integer, as.integer) %>% 
+  mutate(NumOfChronic = select(.,contains("Chronic_")) %>% rowSums()) %>%
+  select(PID, RenalDisease, DeadFlag, NumOfChronic) %>% 
+  group_by(PID) %>%
+  summarise(SumRenalDisease = sum(RenalDisease),
+            SumDeadFlag = sum(DeadFlag),
+            SumNumOfChronic = sum(NumOfChronic))
+data3$SumNumOfChronic <- data3$SumNumOfChronic/2
+```
+
+
+* These ordinal vaiable contains high dimensionlity from beneficiary.csv will be analysis further in EDA:
+DiagnosisGroupCode, Gender, Race, State, County
+
+
+```{r}
+# 5. merge table (data1:data3)
+
+# merge feature engineered patient data and beneficiary data
+model_data <- merge(data1,data2,by="PID")
+# remove duplicate fraud column and adjust column name
+model_data$Fraud.x <- NULL
+names(model_data)[11] <- "Fraud"
+
+# merge patient data with other categorical features
+model_data <- merge(model_data, data3, by = "PID")
+
+# remove "PID"
+model_data$PID <- NULL
+# model_data$`AvgNumofCID - AvgNumofDistinctCID` <- NULL
+
+### rename columns
+names(model_data)[1] <- "AvgNumofCID_minus_AvgNumofDistinctCID"
+names(model_data)[2] <- "AvgNumofBID_minus_AvgNumofDistinctBID"
+```
+
+```{r}
+# check model_data data
+head(model_data)
+```
+
+<br />
+
+### Correlation matrix plot
+
+<br />
+
+```{r  results='hide',message=FALSE,warning=FALSE,fig.width=18, fig.height=13}
+
+model_data2 <- model_data
+model_data2$Fraud <- as.numeric(ifelse(model_data$Fraud == "No",0,1))
+model_data2$AvgNumofCID_minus_AvgNumofDistinctCID <- NULL
+corr <- cor(model_data2,use = "complete.obs")
+
+library(corrplot)
+corrplot(corr, 
+         # adjust visualization method, display spot and character ordering
+         method="color", type = "upper", order = "hclust",
+         # add correlation coefficient and adjust text size
+         addCoef.col = "black",number.cex = .8,
+         # adjust color of corr.coef text
+         tl.col = "black",
+         diag = FALSE)
+```
+
+<br />
+
+### Random Forest Model and Feature Importance
+
+<br />
+
+```{r, results='hide',message=FALSE,warning=FALSE}
+# random forest model
+split_70percentage <- (.7)
+trainingRowIndex_70pct <- sample(1:nrow(model_data), (split_70percentage)*nrow(model_data))
+rf_train_70pct <- model_data[trainingRowIndex_70pct, ]
+rf_test_30pct <- model_data[-trainingRowIndex_70pct, ]
+
+library(randomForest)
+rf_fit <- randomForest(Fraud~., data = rf_train_70pct, ntree = 100, importance = TRUE,na.action = na.exclude)
+
+```
+
+```{r  fig.width=18, fig.height=12}
+varImpPlot(rf_fit)
+```
+
+```{r}
+importance(rf_fit)
+```
+
+
