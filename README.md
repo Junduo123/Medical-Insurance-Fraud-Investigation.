@@ -1,5 +1,6 @@
 ## Competition:
-[2020 University of Toronto Master of Management Science Data Hackthon](https://www.rotman.utoronto.ca/Degrees/MastersPrograms/MMA/datathon2020/Datathon2020FAQ) <img src='figures/MMA2020logo.png' align="right" height="180"/>
+[2020 University of Toronto Master of Management Analytics Data Hackthon](https://www.rotman.utoronto.ca/Degrees/MastersPrograms/MMA/datathon2020/Datathon2020FAQ) <img src='figures/MMA2020logo.png' align="right" height="180"/>
+
 
 ## Challenge: 
 Medical Insurance Fraud Investigation
