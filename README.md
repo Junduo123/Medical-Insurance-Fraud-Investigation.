@@ -21,3 +21,5 @@ is still vulnerable to fraud with fewer than 5% of Medicare claims being audited
 **Useful Code:** We use R language as our analytical tool to conduct statistical test for this challenge: [Code.Rmd](https://github.com/Junduo123/Medical-Insurance-Fraud-Investigation./blob/main/Medical%20Insurance%20Fraud%20Investigation%20-%20Team%20Hortons.Rmd)
 
 **Tableau Dashboard:** We use Tableau as our storytelling tool to make interactive dashboard and infographics for this challenge: [Tableau Public](https://public.tableau.com/profile/junduo#!/vizhome/MedicalInsuranceFraudInvestigation/WelcomePage)
+
+Our Team's submission to the Datathon held at University of Toronto, Oct 13 2019. Top 5 Datathon Finalist
