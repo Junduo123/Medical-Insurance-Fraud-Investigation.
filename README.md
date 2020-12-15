@@ -23,4 +23,4 @@ is still vulnerable to fraud with fewer than 5% of Medicare claims being audited
 
 **Tableau Dashboard:** We use Tableau as our storytelling tool to make interactive dashboard and infographics for this challenge: [Tableau Public](https://public.tableau.com/profile/junduo#!/vizhome/MedicalInsuranceFraudInvestigation/WelcomePage)
 
-Our Team's submission to the Datathon held at University of Toronto, Oct 13 2019. Top 5 Datathon Finalist
+Our Team's submission to the Datathon held at University of Toronto, Oct 13 2019. Top 5 shortlisted Finalist
