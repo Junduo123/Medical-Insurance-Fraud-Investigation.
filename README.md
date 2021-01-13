@@ -4,8 +4,8 @@
 
 ## Challenge: 
 Medical Insurance Fraud Investigation
--  `Team name`: Team Hortons
-- `Team members`: [Minke Wang](https://github.com/chelseawmk?tab=stars), [Yuqing Sun](https://git.uwaterloo.ca/yasun), [Lily(Lan Xiazi) Liu](https://www.linkedin.com/in/lanxiaziliu/), [Oliver (Junduo) Dong](https://github.com/Junduo123)
+- `Team name`: Team Hortons
+- `Team members`: [Minke Wang](https://github.com/chelseawmk?tab=stars), [Yuqing Sun](https://git.uwaterloo.ca/yasun), [Lily(Lan Xiazi) Liu](https://www.linkedin.com/in/lanxiaziliu/), [Oliver (Junduo) Dong](https://www.linkedin.com/in/junduo-dong/)
 
 ## Background
 - Medical provider fraud is one of the biggest problems facing the US public healthcare system. Medicare, one of the largest public insurance programs primarily for people aged 65 or older,accounts for a majority of public healthcare spending and has been the target of many fraud schemes.
